@@ -109,17 +109,21 @@ class VectorStore:
             metadata_json = json.dumps(metadata)
 
             # Insert into database
+            # Use parameterized query with proper type casting
             insert_sql = text("""
                 INSERT INTO document_embeddings (document_id, fund_id, content, embedding, metadata)
-                VALUES (:document_id, :fund_id, :content, :embedding::vector, :metadata::jsonb)
+                VALUES (:document_id, :fund_id, :content, :embedding, :metadata)
                 RETURNING id
             """)
+
+            # Convert embedding to pgvector format string
+            embedding_str = '[' + ','.join(map(str, embedding_list)) + ']'
 
             result = self.db.execute(insert_sql, {
                 "document_id": metadata.get("document_id"),
                 "fund_id": metadata.get("fund_id"),
                 "content": content,
-                "embedding": str(embedding_list),
+                "embedding": embedding_str,
                 "metadata": metadata_json
             })
 
@@ -159,7 +163,6 @@ class VectorStore:
             # Build query with optional filters
             where_clause = ""
             params = {
-                "query_embedding": str(embedding_list),
                 "k": k
             }
 
@@ -176,6 +179,9 @@ class VectorStore:
 
             # Search using cosine distance (<=> operator)
             # Note: 1 - distance gives similarity score (higher = more similar)
+            # Convert embedding to pgvector format string
+            embedding_str = '[' + ','.join(map(str, embedding_list)) + ']'
+
             search_sql = text(f"""
                 SELECT
                     id,
@@ -183,12 +189,14 @@ class VectorStore:
                     fund_id,
                     content,
                     metadata,
-                    1 - (embedding <=> :query_embedding::vector) as similarity_score
+                    1 - (embedding <=> :query_embedding) as similarity_score
                 FROM document_embeddings
                 {where_clause}
-                ORDER BY embedding <=> :query_embedding::vector
+                ORDER BY embedding <=> :query_embedding
                 LIMIT :k
             """)
+
+            params["query_embedding"] = embedding_str
 
             result = self.db.execute(search_sql, params)
 
@@ -254,8 +262,8 @@ class VectorStore:
             else:
                 delete_sql = text("DELETE FROM document_embeddings")
                 self.db.execute(delete_sql)
-            
+
             self.db.commit()
         except Exception as e:
-            print(f"Error clearing vector store: {e}")
+            logger.error(f"Error clearing vector store: {e}")
             self.db.rollback()

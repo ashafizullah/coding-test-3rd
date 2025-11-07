@@ -14,10 +14,10 @@ export const documentApi = {
   upload: async (file: File, fundId?: number) => {
     const formData = new FormData()
     formData.append('file', file)
-    if (fundId) {
+    if (fundId !== null && fundId !== undefined) {
       formData.append('fund_id', fundId.toString())
     }
-    
+
     const response = await api.post('/api/documents/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -59,7 +59,12 @@ export const fundApi = {
     const response = await api.post('/api/funds/', fund)
     return response.data
   },
-  
+
+  delete: async (fundId: number) => {
+    const response = await api.delete(`/api/funds/${fundId}`)
+    return response.data
+  },
+
   getTransactions: async (fundId: number, type: string, page: number = 1, limit: number = 50) => {
     const response = await api.get(`/api/funds/${fundId}/transactions`, {
       params: { transaction_type: type, page, limit }

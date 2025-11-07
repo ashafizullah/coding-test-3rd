@@ -5,9 +5,12 @@ from typing import Dict, Any, Optional
 from decimal import Decimal
 import numpy as np
 import numpy_financial as npf
+import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.models.transaction import CapitalCall, Distribution, Adjustment
+
+logger = logging.getLogger(__name__)
 
 
 class MetricsCalculator:
@@ -102,12 +105,12 @@ class MetricsCalculator:
             
             if irr is None or np.isnan(irr) or np.isinf(irr):
                 return None
-            
+
             # Convert to percentage
             return round(float(irr) * 100, 2)
-            
+
         except Exception as e:
-            print(f"Error calculating IRR: {e}")
+            logger.error(f"Error calculating IRR: {e}")
             return None
 
     def calculate_nav(self, fund_id: int) -> Optional[Decimal]:

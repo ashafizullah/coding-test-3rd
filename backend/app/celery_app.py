@@ -27,11 +27,12 @@ celery_app.conf.update(
 )
 
 # Optional: Task routes
-celery_app.conf.task_routes = {
-    "app.tasks.document_tasks.process_document_task": {
-        "queue": "document_processing"
-    },
-}
+# Using default 'celery' queue
+# celery_app.conf.task_routes = {
+#     "app.tasks.document_tasks.process_document_task": {
+#         "queue": "document_processing"
+#     },
+# }
 
 if __name__ == "__main__":
     celery_app.start()

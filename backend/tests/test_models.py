@@ -242,15 +242,15 @@ class TestConversationMessageModel:
             conversation_id=sample_conversation.id,
             role="assistant",
             content="Response with metadata",
-            metadata={"sources": ["doc1", "doc2"], "metrics": {"dpi": 0.5}},
+            message_metadata={"sources": ["doc1", "doc2"], "metrics": {"dpi": 0.5}},
             timestamp=datetime.now(timezone.utc)
         )
         db_session.add(message)
         db_session.commit()
 
-        assert message.metadata is not None
-        assert "sources" in message.metadata
-        assert "metrics" in message.metadata
+        assert message.message_metadata is not None
+        assert "sources" in message.message_metadata
+        assert "metrics" in message.message_metadata
 
 
 class TestCustomFormulaModel:

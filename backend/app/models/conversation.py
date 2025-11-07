@@ -30,7 +30,7 @@ class ConversationMessage(Base):
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False, index=True)
     role = Column(String(50), nullable=False)  # 'user' or 'assistant'
     content = Column(Text, nullable=False)
-    metadata = Column(JSON, nullable=True)  # Store additional data like sources, metrics
+    message_metadata = Column(JSON, nullable=True)  # Store additional data like sources, metrics
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     # Relationships

@@ -75,7 +75,7 @@ export default function MetricsComparisonChart({
       case "pic":
         return "PIC (Paid-In Capital)";
       default:
-        return metric.toUpperCase();
+        return "Metric";
     }
   };
 

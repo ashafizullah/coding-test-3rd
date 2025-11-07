@@ -96,6 +96,39 @@ class DocumentProcessor:
                     logger.error(error_msg)
                     stats['errors'].append(error_msg)
 
+            # Step 2.5: Fallback to LLM-based text extraction if no tables found
+            if stats['tables_found'] == 0 or (stats['capital_calls'] == 0 and stats['distributions'] == 0):
+                logger.info("No structured tables found, attempting LLM-based text extraction")
+                try:
+                    llm_data = self.table_parser.extract_data_from_text(file_path)
+                    llm_calls_count = 0
+                    llm_dists_count = 0
+
+                    # Save capital calls
+                    if llm_data.get('capital_calls'):
+                        validated_calls = self.table_parser.validate_and_clean_data(
+                            llm_data['capital_calls'], 'capital_calls'
+                        )
+                        self._save_capital_calls(validated_calls, fund_id)
+                        stats['capital_calls'] += len(validated_calls)
+                        llm_calls_count = len(validated_calls)
+
+                    # Save distributions
+                    if llm_data.get('distributions'):
+                        validated_dists = self.table_parser.validate_and_clean_data(
+                            llm_data['distributions'], 'distributions'
+                        )
+                        self._save_distributions(validated_dists, fund_id)
+                        stats['distributions'] += len(validated_dists)
+                        llm_dists_count = len(validated_dists)
+
+                    logger.info(f"LLM extraction completed: {llm_calls_count} capital calls, {llm_dists_count} distributions")
+
+                except Exception as e:
+                    error_msg = f"Error in LLM-based text extraction: {e}"
+                    logger.error(error_msg)
+                    stats['errors'].append(error_msg)
+
             # Step 3: Extract text content for RAG
             text_content = self._extract_text_content(file_path)
             stats['pages_processed'] = len(text_content)

@@ -2,7 +2,9 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Send, Loader2, FileText } from 'lucide-react'
-import { chatApi } from '@/lib/api'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { chatApi, fundApi } from '@/lib/api'
 import { formatCurrency } from '@/lib/utils'
 
 interface Message {
@@ -13,27 +15,64 @@ interface Message {
   timestamp: Date
 }
 
+interface Fund {
+  id: number
+  name: string
+  gp_name: string
+  vintage_year: number
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [conversationId, setConversationId] = useState<string>()
+  const [funds, setFunds] = useState<Fund[]>([])
+  const [selectedFundId, setSelectedFundId] = useState<number | null>(null)
+  const [loadingFunds, setLoadingFunds] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // Fetch funds on mount
   useEffect(() => {
-    // Create conversation on mount
-    chatApi.createConversation().then(conv => {
-      setConversationId(conv.conversation_id)
-    })
+    const fetchFunds = async () => {
+      try {
+        const data = await fundApi.list()
+        setFunds(data)
+        if (data.length > 0) {
+          setSelectedFundId(data[0].id)
+        }
+      } catch (error) {
+        console.error('Error fetching funds:', error)
+      } finally {
+        setLoadingFunds(false)
+      }
+    }
+    fetchFunds()
   }, [])
+
+  // Create conversation when fund is selected
+  useEffect(() => {
+    if (selectedFundId) {
+      chatApi.createConversation(selectedFundId).then(conv => {
+        setConversationId(conv.conversation_id)
+      })
+    }
+  }, [selectedFundId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Handle fund change - reset conversation
+  const handleFundChange = (fundId: number) => {
+    setSelectedFundId(fundId)
+    setMessages([])
+    setConversationId(undefined)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || loading) return
+    if (!input.trim() || loading || !selectedFundId) return
 
     const userMessage: Message = {
       role: 'user',
@@ -46,7 +85,7 @@ export default function ChatPage() {
     setLoading(true)
 
     try {
-      const response = await chatApi.query(input, undefined, conversationId)
+      const response = await chatApi.query(input, selectedFundId, conversationId)
       
       const assistantMessage: Message = {
         role: 'assistant',
@@ -70,7 +109,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto h-[calc(100vh-12rem)]">
+    <div className="max-w-5xl mx-auto">
       <div className="mb-4">
         <h1 className="text-4xl font-bold mb-2">Fund Analysis Chat</h1>
         <p className="text-gray-600">
@@ -78,7 +117,43 @@ export default function ChatPage() {
         </p>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md flex flex-col h-full">
+      {/* Fund Selector */}
+      <div className="bg-white rounded-lg shadow-md p-4 mb-4">
+        <div className="flex items-center space-x-4">
+          <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+            Select Fund:
+          </label>
+          {loadingFunds ? (
+            <div className="flex items-center space-x-2 text-gray-500">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Loading funds...</span>
+            </div>
+          ) : funds.length === 0 ? (
+            <p className="text-sm text-gray-600">
+              No funds available. Please upload a fund document first.
+            </p>
+          ) : (
+            <select
+              value={selectedFundId || ''}
+              onChange={(e) => handleFundChange(Number(e.target.value))}
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              {funds.map((fund) => (
+                <option key={fund.id} value={fund.id}>
+                  {fund.name} ({fund.gp_name}) - {fund.vintage_year}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        {selectedFundId && (
+          <p className="text-xs text-gray-500 mt-2">
+            All questions will be answered based on the selected fund's data
+          </p>
+        )}
+      </div>
+
+      <div className="bg-white rounded-lg shadow-md flex flex-col" style={{ height: 'calc(100vh - 28rem)' }}>
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {messages.length === 0 && (
@@ -86,26 +161,39 @@ export default function ChatPage() {
               <div className="text-gray-400 mb-4">
                 <FileText className="w-16 h-16 mx-auto" />
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Start a conversation
-              </h3>
-              <p className="text-gray-600 mb-6">
-                Try asking questions like:
-              </p>
-              <div className="space-y-2 max-w-md mx-auto">
-                <SampleQuestion
-                  question="What is the current DPI?"
-                  onClick={() => setInput("What is the current DPI?")}
-                />
-                <SampleQuestion
-                  question="Calculate the IRR for this fund"
-                  onClick={() => setInput("Calculate the IRR for this fund")}
-                />
-                <SampleQuestion
-                  question="What does Paid-In Capital mean?"
-                  onClick={() => setInput("What does Paid-In Capital mean?")}
-                />
-              </div>
+              {selectedFundId ? (
+                <>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    Start a conversation
+                  </h3>
+                  <p className="text-gray-600 mb-6">
+                    Try asking questions like:
+                  </p>
+                  <div className="space-y-2 max-w-md mx-auto">
+                    <SampleQuestion
+                      question="What is the current DPI?"
+                      onClick={() => setInput("What is the current DPI?")}
+                    />
+                    <SampleQuestion
+                      question="Calculate the IRR for this fund"
+                      onClick={() => setInput("Calculate the IRR for this fund")}
+                    />
+                    <SampleQuestion
+                      question="Show me all capital calls"
+                      onClick={() => setInput("Show me all capital calls")}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    No fund selected
+                  </h3>
+                  <p className="text-gray-600">
+                    Please select a fund above to start asking questions
+                  </p>
+                </>
+              )}
             </div>
           )}
 
@@ -130,13 +218,17 @@ export default function ChatPage() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask a question about the fund..."
+              placeholder={
+                selectedFundId
+                  ? "Ask a question about the fund..."
+                  : "Please select a fund first..."
+              }
               className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
+              disabled={loading || !selectedFundId}
             />
             <button
               type="submit"
-              disabled={loading || !input.trim()}
+              disabled={loading || !input.trim() || !selectedFundId}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <Send className="w-4 h-4" />
@@ -162,7 +254,48 @@ function MessageBubble({ message }: { message: Message }) {
               : 'bg-gray-100 text-gray-900'
           }`}
         >
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          {isUser ? (
+            <p className="whitespace-pre-wrap">{message.content}</p>
+          ) : (
+            <div className="prose prose-sm max-w-none">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                  strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                  em: ({ children }) => <em className="italic">{children}</em>,
+                  ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                  li: ({ children }) => <li className="ml-2">{children}</li>,
+                  code: ({ inline, children }: any) =>
+                    inline ? (
+                      <code className="bg-gray-800 text-gray-100 px-1.5 py-0.5 rounded text-sm font-mono">
+                        {children}
+                      </code>
+                    ) : (
+                      <code className="block bg-gray-800 text-gray-100 p-3 rounded-lg text-sm font-mono overflow-x-auto my-2">
+                        {children}
+                      </code>
+                    ),
+                  h1: ({ children }) => <h1 className="text-xl font-bold mb-2 mt-3">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-3">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-2">{children}</h3>,
+                  blockquote: ({ children }) => (
+                    <blockquote className="border-l-4 border-gray-300 pl-3 italic my-2">
+                      {children}
+                    </blockquote>
+                  ),
+                  a: ({ href, children }) => (
+                    <a href={href} className="text-blue-600 underline hover:text-blue-800" target="_blank" rel="noopener noreferrer">
+                      {children}
+                    </a>
+                  ),
+                }}
+              >
+                {message.content}
+              </ReactMarkdown>
+            </div>
+          )}
         </div>
 
         {/* Metrics Display */}

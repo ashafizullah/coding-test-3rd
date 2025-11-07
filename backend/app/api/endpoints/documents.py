@@ -1,9 +1,9 @@
 """
 Document API endpoints
 """
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import os
 import shutil
 from datetime import datetime
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
-    fund_id: int = None,
+    fund_id: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -34,6 +34,9 @@ async def upload_document(
 
     The document will be processed asynchronously by a Celery worker.
     """
+
+    # Log received fund_id for debugging
+    logger.info(f"Upload request received - file: {file.filename}, fund_id: {fund_id}")
 
     # Validate file type
     if not file.filename.endswith('.pdf'):

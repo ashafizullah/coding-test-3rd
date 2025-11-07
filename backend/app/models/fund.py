@@ -20,9 +20,9 @@ class Fund(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
-    capital_calls = relationship("CapitalCall", back_populates="fund")
-    distributions = relationship("Distribution", back_populates="fund")
-    adjustments = relationship("Adjustment", back_populates="fund")
-    documents = relationship("Document", back_populates="fund")
-    conversations = relationship("Conversation", back_populates="fund")
-    custom_formulas = relationship("CustomFormula", back_populates="fund")
+    capital_calls = relationship("CapitalCall", back_populates="fund", cascade="all, delete-orphan")
+    distributions = relationship("Distribution", back_populates="fund", cascade="all, delete-orphan")
+    adjustments = relationship("Adjustment", back_populates="fund", cascade="all, delete-orphan")
+    documents = relationship("Document", back_populates="fund", cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="fund", cascade="all, delete-orphan")
+    custom_formulas = relationship("CustomFormula", back_populates="fund", cascade="all, delete-orphan")

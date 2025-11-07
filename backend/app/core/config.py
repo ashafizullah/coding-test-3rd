@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # Groq
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "mixtral-8x7b-32768"
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
     # OpenAI
     OPENAI_API_KEY: str = ""

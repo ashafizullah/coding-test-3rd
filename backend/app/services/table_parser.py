@@ -6,11 +6,13 @@ Handles capital calls, distributions, and adjustments tables.
 """
 
 import re
+import json
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Dict, Optional, Tuple
 import pdfplumber
 import logging
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,149 @@ class TableParser:
 
     def __init__(self):
         """Initialize the table parser"""
-        pass
+        self.llm_client = None
+        self._initialize_llm()
+
+    def _initialize_llm(self):
+        """Initialize LLM client for text-based extraction"""
+        try:
+            if settings.LLM_PROVIDER == "groq":
+                from groq import Groq
+                self.llm_client = Groq(api_key=settings.GROQ_API_KEY)
+                self.llm_model = settings.GROQ_MODEL
+            elif settings.LLM_PROVIDER == "openai":
+                from openai import OpenAI
+                self.llm_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+                self.llm_model = settings.OPENAI_MODEL
+            logger.info(f"Initialized LLM client: {settings.LLM_PROVIDER}")
+        except Exception as e:
+            logger.warning(f"Could not initialize LLM for text extraction: {e}")
+
+    def extract_data_from_text(self, pdf_path: str) -> Dict[str, List[Dict]]:
+        """
+        Extract capital calls and distributions from PDF text using LLM.
+
+        This is a fallback method when structured tables are not found.
+
+        Args:
+            pdf_path: Path to the PDF file
+
+        Returns:
+            Dictionary with 'capital_calls' and 'distributions' lists
+        """
+        if not self.llm_client:
+            logger.warning("LLM client not available for text extraction")
+            return {'capital_calls': [], 'distributions': [], 'adjustments': []}
+
+        try:
+            # Extract all text from PDF
+            full_text = ""
+            with pdfplumber.open(pdf_path) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        full_text += text + "\n\n"
+
+            if not full_text.strip():
+                logger.warning("No text found in PDF")
+                return {'capital_calls': [], 'distributions': [], 'adjustments': []}
+
+            # Use LLM to extract structured data
+            prompt = f"""Extract fund performance data from the following text.
+
+Find all capital calls and distributions mentioned in the text.
+
+For each capital call, extract:
+- date (in YYYY-MM-DD format)
+- amount (numeric only, without currency symbols)
+- purpose/description
+
+For each distribution, extract:
+- date (in YYYY-MM-DD format)
+- amount (numeric only, without currency symbols)
+- type (e.g., "Distribution", "Return of Capital")
+- description
+
+Return ONLY a valid JSON object in this exact format (no markdown, no code blocks):
+{{
+  "capital_calls": [
+    {{"date": "2025-05-01", "amount": 5000000, "call_type": "Standard Call", "description": "Follow-on investment"}},
+    ...
+  ],
+  "distributions": [
+    {{"date": "2025-03-15", "amount": 2000000, "distribution_type": "Distribution", "description": "Q1 2025 distribution"}},
+    ...
+  ]
+}}
+
+Text:
+{full_text[:8000]}"""
+
+            # Call LLM
+            if settings.LLM_PROVIDER == "groq":
+                response = self.llm_client.chat.completions.create(
+                    model=self.llm_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=2000
+                )
+                result_text = response.choices[0].message.content
+            elif settings.LLM_PROVIDER == "openai":
+                response = self.llm_client.chat.completions.create(
+                    model=self.llm_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=2000
+                )
+                result_text = response.choices[0].message.content
+
+            # Parse JSON response
+            # Remove markdown code blocks if present
+            result_text = result_text.strip()
+            if result_text.startswith("```"):
+                result_text = result_text.split("```")[1]
+                if result_text.startswith("json"):
+                    result_text = result_text[4:]
+            result_text = result_text.strip()
+
+            data = json.loads(result_text)
+
+            # Convert to expected format
+            capital_calls = []
+            for cc in data.get('capital_calls', []):
+                try:
+                    capital_calls.append({
+                        'call_date': self._parse_date(cc.get('date')),
+                        'call_type': cc.get('call_type', 'Standard Call'),
+                        'amount': Decimal(str(cc.get('amount', 0))),
+                        'description': cc.get('description', '')
+                    })
+                except Exception as e:
+                    logger.warning(f"Error parsing capital call from LLM: {e}")
+
+            distributions = []
+            for dist in data.get('distributions', []):
+                try:
+                    distributions.append({
+                        'distribution_date': self._parse_date(dist.get('date')),
+                        'distribution_type': dist.get('distribution_type', 'Distribution'),
+                        'amount': Decimal(str(dist.get('amount', 0))),
+                        'is_recallable': False,
+                        'description': dist.get('description', '')
+                    })
+                except Exception as e:
+                    logger.warning(f"Error parsing distribution from LLM: {e}")
+
+            logger.info(f"LLM extracted {len(capital_calls)} capital calls and {len(distributions)} distributions from text")
+            return {
+                'capital_calls': capital_calls,
+                'distributions': distributions,
+                'adjustments': []
+            }
+
+        except Exception as e:
+            logger.error(f"Error extracting data from text using LLM: {e}")
+            return {'capital_calls': [], 'distributions': [], 'adjustments': []}
 
     def extract_tables_from_pdf(self, pdf_path: str) -> List[Dict]:
         """
